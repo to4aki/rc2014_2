@@ -1,16 +1,14 @@
 #include <android/log.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "IO.h"
 #include "Keyboard.h"
 #include "Console.h"
 
-extern Keyboard g_keyboard;
+extern Keyboard g_keyboardA;
+extern Keyboard g_keyboardB;
 extern Console g_console;
-
-volatile uint8_t g_lastIoPort = 0;
-static uint8_t aciaControl = 0;
-
 
 static uint8_t cfSector[512];
 static int cfPos = 0;
@@ -20,101 +18,74 @@ static uint8_t cfLba1 = 0;
 static uint8_t cfLba2 = 0;
 static uint8_t cfLba3 = 0;
 
-static uint8_t cfStatus = 0x48;
+static FILE *cfImage = nullptr;
 
-static uint8_t cpmImage[512 * 256];
-static bool cpmImageReady = false;
+uint8_t IO::in(uint8_t port)
+{
+    switch (port)
+    {
+        case 0x10:
+            return cfSector[cfPos++ & 511];
 
-
-uint8_t IO::in(uint8_t port) {
-    g_lastIoPort = port;
-
-    switch (port) {
-        //
-        // CF DATA
-        //
-        case 0x10: {
-            extern uint8_t cfSector[512];
-            extern int cfPos;
-
-            uint8_t value =
-                    cfSector[cfPos & 511];
-
-            cfPos++;
-
-            return value;
-        }
-
-            //
-            // CF STATUS
-            //
-        case 0x17: {
+        case 0x17:
             return 0x48;
-        }
 
             //
             // SIO A DATA
             //
-        case 0x00: {
-            int key = g_keyboard.pop();
+        case 0x00:
+        {
+            int key = g_keyboardA.pop();
 
-            __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    "KEY",
-                    "POP=%d",
-                    key);
-
-            if (key < 0) {
+            if (key < 0)
+            {
                 return 0;
             }
 
-            return (uint8_t) key;
+            return (uint8_t)key;
         }
 
-        case 0x01: {
-            int key = g_keyboard.pop();
+            //
+            // SIO B DATA
+            //
+        case 0x01:
+        {
+            int key = g_keyboardB.pop();
 
-            __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    "KEY",
-                    "POP1=%d",
-                    key);
-
-            if (key < 0) {
+            if (key < 0)
+            {
                 return 0;
             }
 
-            return (uint8_t) key;
+            return (uint8_t)key;
         }
 
-        case 0x02: {
+            //
+            // SIO A STATUS
+            //
+        case 0x02:
+        {
             uint8_t status = 0x04;
 
-            if (!g_keyboard.empty()) {
+            if (!g_keyboardA.empty())
+            {
                 status |= 0x01;
             }
-
-            __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    "KEY",
-                    "STATUS=%02X",
-                    status);
 
             return status;
         }
 
-        case 0x03: {
+            //
+            // SIO B STATUS
+            //
+        case 0x03:
+        {
             uint8_t status = 0x04;
 
-            if (!g_keyboard.empty()) {
+            if (!g_keyboardB.empty())
+            {
                 status |= 0x01;
             }
-
-            __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    "KEY",
-                    "STATUS1=%02X",
-                    status);
 
             return status;
         }
@@ -126,11 +97,43 @@ uint8_t IO::in(uint8_t port) {
 
 void IO::out(
         uint8_t port,
-        uint8_t value) {
-    switch (port) {
+        uint8_t value)
+{
+    switch (port)
+    {
         //
-        // CF LBA
+        // CF DATA
         //
+        case 0x10:
+        {
+            cfSector[cfPos++] = value;
+
+            if (cfPos >= 512)
+            {
+                uint32_t lba =
+                        cfLba0 |
+                        (cfLba1 << 8) |
+                        (cfLba2 << 16);
+
+                fseek(
+                        cfImage,
+                        lba * 512,
+                        SEEK_SET);
+
+                fwrite(
+                        cfSector,
+                        1,
+                        512,
+                        cfImage);
+
+                fflush(cfImage);
+
+                cfPos = 0;
+            }
+
+            break;
+        }
+
         case 0x13:
             cfLba0 = value;
             break;
@@ -150,34 +153,47 @@ void IO::out(
             //
             // CF COMMAND
             //
-        case 0x17: {
-            uint32_t lba = cfLba0;
+        case 0x17:
+        {
+            uint32_t lba =
+                    cfLba0 |
+                    (cfLba1 << 8) |
+                    (cfLba2 << 16);
 
-            __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    "CF",
-                    "CMD=%02X LBA=%u",
-                    value,
-                    lba);
-
-            if (value == 0x20) {
+            //
+            // READ SECTOR
+            //
+            if (value == 0x20)
+            {
                 cfPos = 0;
 
-                if (lba < 24) {
-                    memcpy(
-                            cfSector,
-                            &cpmImage[lba * 512],
-                            512);
-                } else {
-                    //
-                    // 空ディスク
-                    // CP/M的には E5 が未使用
-                    //
+                fseek(
+                        cfImage,
+                        lba * 512,
+                        SEEK_SET);
+
+                size_t size =
+                        fread(
+                                cfSector,
+                                1,
+                                512,
+                                cfImage);
+
+                if (size != 512)
+                {
                     memset(
                             cfSector,
                             0xE5,
                             sizeof(cfSector));
                 }
+            }
+
+            //
+            // WRITE SECTOR
+            //
+            if (value == 0x30)
+            {
+                cfPos = 0;
             }
 
             break;
@@ -187,44 +203,91 @@ void IO::out(
             // Console
             //
         case 0x00:
-            g_console.putChar(value);
-            break;
-
         case 0x01:
-            g_console.putChar(value);
-            break;
-
         case 0x81:
             g_console.putChar(value);
             break;
 
         default:
-            __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    "IO",
-                    "IN %02X",
-                    port);
             break;
     }
 }
 
 void IO::buildCpmImage()
 {
-    memset(
-            cpmImage,
-            0xE5,
-            sizeof(cpmImage));
+    //remove("/data/data/com.example.sample_c/files/disk.img");
 
-    for(uint32_t addr = 0xD000;
-        addr <= 0xFFFF;
-        addr++)
+    if (cfImage)
     {
-        cpmImage[addr - 0xD000] =
-                g_memory.read(addr);
+        fclose(cfImage);
+        cfImage = nullptr;
     }
 
-    __android_log_print(
-            ANDROID_LOG_ERROR,
-            "CF",
-            "CPM IMAGE READY");
+    cfImage =
+            fopen(
+                    "/data/data/com.example.sample_c/files/disk.img",
+                    "r+b");
+
+    if (cfImage == nullptr)
+    {
+        cfImage =
+                fopen(
+                        "/data/data/com.example.sample_c/files/disk.img",
+                        "w+b");
+
+        if (cfImage)
+        {
+            uint8_t sector[512];
+
+            memset(
+                    sector,
+                    0xE5,
+                    sizeof(sector));
+
+            //
+            // 64MB CompactFlash
+            //
+            for (uint32_t i = 0;
+                 i < (64U * 1024U * 1024U) / 512U;
+                 i++)
+            {
+                fwrite(
+                        sector,
+                        1,
+                        sizeof(sector),
+                        cfImage);
+            }
+
+            fflush(cfImage);
+        }
+    }
+
+    if (cfImage == nullptr)
+    {
+        __android_log_print(
+                ANDROID_LOG_ERROR,
+                "CF",
+                "IMAGE OPEN FAILED");
+
+        return;
+    }
+
+    //
+    // CP/M boot sectors
+    //
+    fseek(
+            cfImage,
+            0,
+            SEEK_SET);
+
+    for (uint32_t addr = 0xD000;
+         addr <= 0xFFFF;
+         addr++)
+    {
+        fputc(
+                g_memory.read(addr),
+                cfImage);
+    }
+
+    fflush(cfImage);
 }

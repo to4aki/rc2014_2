@@ -15,12 +15,12 @@
 #include <android/asset_manager_jni.h>
 #include <android/log.h>
 
-
 AAssetManager *g_assetManager = nullptr;
 VRAM g_vram;
 Memory g_memory;
 Renderer g_renderer;
-Keyboard g_keyboard;
+Keyboard g_keyboardA;
+Keyboard g_keyboardB;
 IO g_io;
 Z80EX_CONTEXT *g_cpu = nullptr;
 Console g_console;
@@ -59,6 +59,24 @@ static Z80EX_BYTE cpu_read(
     uint8_t value =
             g_memory.read(addr);
 
+    if(m1_state && addr == 0x0005)
+    {
+        __android_log_print(
+                ANDROID_LOG_ERROR,
+                "BDOS",
+                "CALL 0005");
+    }
+
+    if(addr >= 0x0080 && addr <= 0x0090)
+    {
+        __android_log_print(
+                ANDROID_LOG_ERROR,
+                "DMAREAD",
+                "%04X=%02X",
+                (unsigned)addr,
+                (unsigned)value);
+    }
+
     return value;
 }
 
@@ -68,6 +86,16 @@ static void cpu_write(
         Z80EX_BYTE value,
         void *user_data)
 {
+    if(addr >= 0x0080 && addr <= 0x0090)
+    {
+        __android_log_print(
+                ANDROID_LOG_ERROR,
+                "DMAWRITE",
+                "%04X=%02X",
+                (unsigned)addr,
+                (unsigned)value);
+    }
+
     g_memory.write(
             addr,
             value);
@@ -78,19 +106,14 @@ static Z80EX_BYTE cpu_in(
         Z80EX_WORD port,
         void *user_data)
 {
-    if(port >= 0x10 && port <= 0x17)
-    {
-        __android_log_print(
-                ANDROID_LOG_ERROR,
-                "CF",
-                "IN %02X",
-                port);
-    }
+    uint8_t p =
+            static_cast<uint8_t>(port);
 
-    return g_io.in(
-            static_cast<uint8_t>(port));
+    Z80EX_BYTE value =
+            g_io.in(p);
+
+    return value;
 }
-
 
 static void cpu_out(
         Z80EX_CONTEXT *cpu,
@@ -117,6 +140,22 @@ static Z80EX_BYTE cpu_intread(
         Z80EX_CONTEXT *cpu,
         void *user_data)
 {
+    uint8_t i =
+            (uint8_t)z80ex_get_reg(
+                    cpu,
+                    regI);
+
+    __android_log_print(
+            ANDROID_LOG_ERROR,
+            "IM2",
+            "I=%02X",
+            i);
+
+    if (i == 0xFF)
+    {
+        return 0xE0;
+    }
+
     return 0x60;
 }
 
@@ -155,7 +194,8 @@ Java_com_example_sample_1c_NativeBridge_init(
         g_vram.colorTable[1][i] = 0x1B;
     }
 
-    g_keyboard.reset();
+    g_keyboardA.reset();
+    g_keyboardB.reset();
     g_memory.reset();
     g_cpu = z80ex_create(
             cpu_read,
@@ -291,6 +331,16 @@ Java_com_example_sample_1c_NativeBridge_render(
                 g_irqPending = false;
 
                 z80ex_int(g_cpu);
+
+                __android_log_print(
+                        ANDROID_LOG_ERROR,
+                        "CCP",
+                        "LEN=%02X [%02X %02X %02X %02X]",
+                        g_memory.read(0xD001),
+                        g_memory.read(0xD002),
+                        g_memory.read(0xD003),
+                        g_memory.read(0xD004),
+                        g_memory.read(0xD005));
             }
 
             g_totalCycles +=
@@ -311,6 +361,16 @@ Java_com_example_sample_1c_NativeBridge_render(
             g_irqPending = false;
 
             z80ex_int(g_cpu);
+
+            __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    "CCP",
+                    "LEN=%02X [%02X %02X %02X %02X]",
+                    g_memory.read(0xD001),
+                    g_memory.read(0xD002),
+                    g_memory.read(0xD003),
+                    g_memory.read(0xD004),
+                    g_memory.read(0xD005));
         }
 
         g_totalCycles +=
@@ -369,12 +429,12 @@ Java_com_example_sample_1c_NativeBridge_keyPress(
         jint ch)
 {
     bool ok =
-            g_keyboard.push(
+            g_keyboardA.push(
                     static_cast<uint8_t>(ch));
 
     __android_log_print(
             ANDROID_LOG_ERROR,
-            "KEY",
+            "KEYA",
             "PUSH=%02X OK=%d",
             (uint8_t)ch,
             ok ? 1 : 0);
