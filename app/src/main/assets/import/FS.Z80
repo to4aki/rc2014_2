@@ -1,0 +1,139 @@
+        ORG     100H
+
+FCB     EQU     5CH
+DMA     EQU     80H
+
+START:
+        LD      DE,FCB
+        LD      C,17
+        CALL    5
+
+NEXT:
+        CP      0FFH
+        RET     Z
+
+        PUSH    AF
+
+        LD      E,'['
+        LD      C,2
+        CALL    5
+
+        POP     AF
+        PUSH    AF
+
+        ADD     A,'0'
+        LD      E,A
+        LD      C,2
+        CALL    5
+
+        LD      E,']'
+        LD      C,2
+        CALL    5
+
+        CALL    CRLF
+
+        POP     AF
+
+        CALL    SHOW
+
+        LD      DE,FCB
+        LD      C,18
+        CALL    5
+
+        JR      NEXT
+
+SHOW:
+        AND     03H
+
+        ADD     A,A
+        ADD     A,A
+        ADD     A,A
+        ADD     A,A
+        ADD     A,A
+
+        LD      L,A
+        LD      H,0
+
+        LD      DE,DMA
+        ADD     HL,DE
+
+        LD      (PTR),HL
+
+        LD      A,32
+        LD      (COUNT),A
+
+LOOP:
+        LD      HL,(PTR)
+        LD      A,(HL)
+
+        CALL    HEX8
+
+        LD      E,' '
+        LD      C,2
+        CALL    5
+
+        LD      HL,(PTR)
+        INC     HL
+        LD      (PTR),HL
+
+        LD      A,(COUNT)
+        DEC     A
+        LD      (COUNT),A
+
+        JR      Z,DONE
+
+        LD      A,(COUNT)
+        AND     07H
+        JR      NZ,LOOP
+
+        CALL    CRLF
+        JR      LOOP
+
+DONE:
+        CALL    CRLF
+        CALL    CRLF
+        RET
+
+HEX8:
+        PUSH    AF
+
+        RRCA
+        RRCA
+        RRCA
+        RRCA
+        AND     0FH
+        CALL    HEXN
+
+        POP     AF
+        AND     0FH
+
+HEXN:
+        ADD     A,'0'
+        CP      ':'
+        JR      C,HX1
+
+        ADD     A,7
+
+HX1:
+        LD      E,A
+        LD      C,2
+        CALL    5
+        RET
+
+CRLF:
+        LD      E,13
+        LD      C,2
+        CALL    5
+
+        LD      E,10
+        LD      C,2
+        CALL    5
+        RET
+
+PTR:
+        DW      0
+
+COUNT:
+        DB      0
+
+        END

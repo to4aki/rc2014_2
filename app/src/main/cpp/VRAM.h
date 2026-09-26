@@ -4,8 +4,10 @@
 
 class VRAM {
 public:
-    static const int COLS = 32;
-    static const int ROWS = 24;
+    static const int COLS = 80;
+    static const int ROWS = 43;
+    static const int WIDTH  = COLS * 8;
+    static const int HEIGHT = ROWS * 8;
     static const int DEBUG_ROWS = 3;
     static const int TEXT_ROWS = ROWS - DEBUG_ROWS;
 

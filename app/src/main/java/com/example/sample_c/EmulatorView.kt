@@ -16,8 +16,8 @@ class EmulatorView(
 {
     private val bitmap =
         Bitmap.createBitmap(
-            256,
-            192,
+            640,
+            344,
             Bitmap.Config.ARGB_8888
         )
 
@@ -41,7 +41,7 @@ class EmulatorView(
 
                     postDelayed(
                         this,
-                        100
+                        16
                     )
                 }
             }
@@ -60,11 +60,11 @@ class EmulatorView(
         bitmap.setPixels(
             pixels,
             0,
-            256,
+            640,
             0,
             0,
-            256,
-            192
+            640,
+            344
         )
 
         canvas.drawBitmap(

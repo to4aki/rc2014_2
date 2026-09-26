@@ -1,6 +1,9 @@
 #pragma once
 
 #include <stdint.h>
+#include <vector>
+#include <ctype.h>
+#include <strings.h>
 
 #include "Memory.h"
 
@@ -16,4 +19,8 @@ public:
 
     void buildCpmImage();
 
+    void injectComFile(
+            const char *filename,
+            const uint8_t *data,
+            size_t size);
 };

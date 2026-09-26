@@ -8,8 +8,8 @@
 #include "z80ex.h"
 #include "z80ex_dasm.h"
 
-constexpr int WIDTH = 256;
-constexpr int HEIGHT = 192;
+constexpr int WIDTH = 640;
+constexpr int HEIGHT = 344;
 
 extern bool g_debugMode;
 extern bool g_dasmMode;
@@ -316,7 +316,7 @@ void Renderer::render(
          row < VRAM::TEXT_ROWS;
          row++) {
 
-        for (int col = 0; col < 32; col++) {
+        for (int col = 0; col < VRAM::COLS; col++) {
             unsigned char ch =
                     vram.text[row][col];
 

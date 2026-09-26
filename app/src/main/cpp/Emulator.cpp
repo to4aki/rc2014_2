@@ -19,14 +19,15 @@ AAssetManager *g_assetManager = nullptr;
 VRAM g_vram;
 Memory g_memory;
 Renderer g_renderer;
+Keyboard g_androidKeyboardA;
 Keyboard g_keyboardA;
 Keyboard g_keyboardB;
 IO g_io;
 Z80EX_CONTEXT *g_cpu = nullptr;
 Console g_console;
 
-constexpr int WIDTH = 256;
-constexpr int HEIGHT = 192;
+constexpr int WIDTH = 640;
+constexpr int HEIGHT = 344;
 
 bool g_debugMode = true;
 bool g_dasmMode = false;
@@ -54,48 +55,15 @@ static Z80EX_BYTE cpu_read(
         Z80EX_CONTEXT *cpu,
         Z80EX_WORD addr,
         int m1_state,
-        void *user_data)
-{
-    uint8_t value =
-            g_memory.read(addr);
-
-    if(m1_state && addr == 0x0005)
-    {
-        __android_log_print(
-                ANDROID_LOG_ERROR,
-                "BDOS",
-                "CALL 0005");
-    }
-
-    if(addr >= 0x0080 && addr <= 0x0090)
-    {
-        __android_log_print(
-                ANDROID_LOG_ERROR,
-                "DMAREAD",
-                "%04X=%02X",
-                (unsigned)addr,
-                (unsigned)value);
-    }
-
-    return value;
+        void *user_data) {
+    return g_memory.read(addr);
 }
 
 static void cpu_write(
         Z80EX_CONTEXT *cpu,
         Z80EX_WORD addr,
         Z80EX_BYTE value,
-        void *user_data)
-{
-    if(addr >= 0x0080 && addr <= 0x0090)
-    {
-        __android_log_print(
-                ANDROID_LOG_ERROR,
-                "DMAWRITE",
-                "%04X=%02X",
-                (unsigned)addr,
-                (unsigned)value);
-    }
-
+        void *user_data) {
     g_memory.write(
             addr,
             value);
@@ -104,33 +72,18 @@ static void cpu_write(
 static Z80EX_BYTE cpu_in(
         Z80EX_CONTEXT *cpu,
         Z80EX_WORD port,
-        void *user_data)
-{
+        void *user_data) {
     uint8_t p =
             static_cast<uint8_t>(port);
 
-    Z80EX_BYTE value =
-            g_io.in(p);
-
-    return value;
+    return g_io.in(p);
 }
 
 static void cpu_out(
         Z80EX_CONTEXT *cpu,
         Z80EX_WORD port,
         Z80EX_BYTE value,
-        void *user_data)
-{
-    if(port >= 0x10 && port <= 0x17)
-    {
-        __android_log_print(
-                ANDROID_LOG_ERROR,
-                "CF",
-                "OUT %02X=%02X",
-                port,
-                value);
-    }
-
+        void *user_data) {
     g_io.out(
             static_cast<uint8_t>(port),
             value);
@@ -138,25 +91,81 @@ static void cpu_out(
 
 static Z80EX_BYTE cpu_intread(
         Z80EX_CONTEXT *cpu,
-        void *user_data)
-{
+        void *user_data) {
     uint8_t i =
-            (uint8_t)z80ex_get_reg(
+            (uint8_t) z80ex_get_reg(
                     cpu,
                     regI);
 
-    __android_log_print(
-            ANDROID_LOG_ERROR,
-            "IM2",
-            "I=%02X",
-            i);
-
-    if (i == 0xFF)
-    {
+    if (i == 0xFF) {
         return 0xE0;
     }
 
     return 0x60;
+}
+
+
+void importAllComFiles()
+{
+    AAssetDir *dir =
+            AAssetManager_openDir(
+                    g_assetManager,
+                    "import");
+
+    if (!dir)
+    {
+        __android_log_print(
+                ANDROID_LOG_ERROR,
+                "IMPORT",
+                "DIR OPEN FAILED");
+        return;
+    }
+
+    const char *fileName;
+
+    while ((fileName = AAssetDir_getNextFileName(dir)) != nullptr)
+    {
+        char fullPath[256];
+
+        snprintf(
+                fullPath,
+                sizeof(fullPath),
+                "import/%s",
+                fileName);
+
+        AAsset *asset =
+                AAssetManager_open(
+                        g_assetManager,
+                        fullPath,
+                        AASSET_MODE_BUFFER);
+
+        if (!asset)
+        {
+            continue;
+        }
+
+        const uint8_t *data =
+                (const uint8_t *)AAsset_getBuffer(asset);
+
+        size_t size =
+                AAsset_getLength(asset);
+
+        __android_log_print(
+                ANDROID_LOG_ERROR,
+                "IMPORT",
+                "FILE=%s SIZE=%u",
+                fileName,
+                (unsigned)size);
+
+        g_io.injectComFile(
+                fileName,
+                data,
+                size);
+
+        AAsset_close(asset);
+    }
+
+    AAssetDir_close(dir);
 }
 
 extern "C"
@@ -194,6 +203,7 @@ Java_com_example_sample_1c_NativeBridge_init(
         g_vram.colorTable[1][i] = 0x1B;
     }
 
+    g_androidKeyboardA.reset();
     g_keyboardA.reset();
     g_keyboardB.reset();
     g_memory.reset();
@@ -281,6 +291,11 @@ Java_com_example_sample_1c_NativeBridge_init(
 
     g_io.buildCpmImage();
 
+    //
+    // DUMP.COM を注入
+    //
+    importAllComFiles();
+
     z80ex_reset(g_cpu);
 
     //z80ex_set_reg(
@@ -324,23 +339,38 @@ Java_com_example_sample_1c_NativeBridge_render(
 {
     if (!g_pause)
     {
-        for (int i = 0; i < 50000; i++)
+        //
+        // Android入力キュー → CP/Mキュー
+        //
+        int moved = 0;
+
+        while (!g_androidKeyboardA.empty()
+               && moved < 1 )
+        {
+            int key =
+                    g_androidKeyboardA.pop();
+
+            if (key >= 0)
+            {
+                g_keyboardA.push(
+                        static_cast<uint8_t>(key));
+
+                g_irqPending = true;
+            }
+
+            moved++;
+        }
+
+        //
+        // CPU実行
+        //
+        for (int i = 0; i < 200000; i++)
         {
             if (g_irqPending)
             {
                 g_irqPending = false;
 
                 z80ex_int(g_cpu);
-
-                __android_log_print(
-                        ANDROID_LOG_ERROR,
-                        "CCP",
-                        "LEN=%02X [%02X %02X %02X %02X]",
-                        g_memory.read(0xD001),
-                        g_memory.read(0xD002),
-                        g_memory.read(0xD003),
-                        g_memory.read(0xD004),
-                        g_memory.read(0xD005));
             }
 
             g_totalCycles +=
@@ -353,24 +383,9 @@ Java_com_example_sample_1c_NativeBridge_render(
 
         if (g_irqPending)
         {
-            __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    "IRQ",
-                    "INT");
-
             g_irqPending = false;
 
             z80ex_int(g_cpu);
-
-            __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    "CCP",
-                    "LEN=%02X [%02X %02X %02X %02X]",
-                    g_memory.read(0xD001),
-                    g_memory.read(0xD002),
-                    g_memory.read(0xD003),
-                    g_memory.read(0xD004),
-                    g_memory.read(0xD005));
         }
 
         g_totalCycles +=
@@ -399,6 +414,7 @@ Java_com_example_sample_1c_NativeBridge_render(
     if (blinkCounter > 5)
     {
         blinkCounter = 0;
+
         g_vram.cursorVisible =
                 !g_vram.cursorVisible;
     }
@@ -429,19 +445,13 @@ Java_com_example_sample_1c_NativeBridge_keyPress(
         jint ch)
 {
     bool ok =
-            g_keyboardA.push(
+            g_androidKeyboardA.push(
                     static_cast<uint8_t>(ch));
-
-    __android_log_print(
-            ANDROID_LOG_ERROR,
-            "KEYA",
-            "PUSH=%02X OK=%d",
-            (uint8_t)ch,
-            ok ? 1 : 0);
 
     if(!ok)
     {
         g_lastKey = '!';
+
         return;
     }
 

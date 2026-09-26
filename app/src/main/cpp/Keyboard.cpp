@@ -4,8 +4,6 @@
 
 #include "Keyboard.h"
 
-#include "Keyboard.h"
-
 void Keyboard::reset()
 {
     readPos = 0;

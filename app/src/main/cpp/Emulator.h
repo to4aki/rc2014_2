@@ -11,4 +11,4 @@ public:
 
     void reset();
     void frame();
-};
+ };
