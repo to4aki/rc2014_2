@@ -97,6 +97,14 @@ class EmulatorView(
 
                     return true
                 }
+                KeyEvent.KEYCODE_Z ->
+                {
+                    NativeBridge.keyPress(0x1A)
+
+                    invalidate()
+
+                    return true
+                }
             }
         }
 
