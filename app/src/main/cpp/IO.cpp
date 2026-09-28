@@ -21,8 +21,7 @@ static uint8_t cfLba3 = 0;
 
 static FILE *cfImage = nullptr;
 
-static long blockOffset(int block)
-{
+static long blockOffset(int block) {
     //
     // Grant Searle CP/M
     //
@@ -32,7 +31,7 @@ static long blockOffset(int block)
     //
     return
             16384L +
-            ((long)block * 4096L);
+            ((long) block * 4096L);
 }
 
 uint8_t IO::in(uint8_t port) {
@@ -60,7 +59,19 @@ uint8_t IO::in(uint8_t port) {
 
             return (uint8_t) last;
         }
+        /*
+        case 0x00:
+        {
+            int key = g_keyboardA.pop();
 
+            if (key < 0)
+            {
+                return 0;
+            }
+
+            return (uint8_t)key;
+        }
+        */
             //
             // SIO B DATA
             //
@@ -210,7 +221,7 @@ void IO::out(
             // Console
             //
         case 0x00:
-        case 0x01:
+        //case 0x01:
         case 0x81:
             g_console.putChar(value);
             break;
@@ -295,11 +306,51 @@ void IO::buildCpmImage() {
 }
 
 
+static void makeExtent1(
+        uint8_t *dir,
+        int extentNo,
+        int records,
+        bool lastExtent) {
+//    dir[12] = 0;      // EX=0固定
+//    dir[13] = 0;
+//    dir[14] = 0;
+//    dir[15] = (uint8_t) records;
+
+    int ex = 0;
+
+    if (records > 0x80) {
+        ex = 1;
+        records -= 0x80;
+    }
+
+    dir[12] = (uint8_t) ex;
+    dir[13] = 0;
+    dir[14] = 0;
+    dir[15] = (uint8_t) records;
+
+}
+
+static void makeExtent2(
+        uint8_t *dir,
+        int extentNo,
+        int records,
+        bool lastExtent) {
+    dir[12] = (uint8_t) extentNo;
+    dir[13] = 0;
+    dir[14] = 0;
+
+    if (!lastExtent) {
+        dir[15] = 0x80;
+    } else {
+        dir[15] = (uint8_t) records;
+    }
+}
+
+
 void IO::injectComFile(
         const char *filename,
         const uint8_t *data,
-        size_t size)
-{
+        size_t size) {
     uint8_t directory[2048];
 
     fseek(
@@ -317,138 +368,108 @@ void IO::injectComFile(
     char ext[3];
 
     memset(name, ' ', sizeof(name));
-    memset(ext,  ' ', sizeof(ext));
+    memset(ext, ' ', sizeof(ext));
 
     const char *dot = strchr(filename, '.');
 
-    if (dot)
-    {
-        int n = (int)(dot - filename);
+    if (dot) {
+        int n = (int) (dot - filename);
 
-        if (n > 8)
-        {
+        if (n > 8) {
             n = 8;
         }
 
-        memcpy(
-                name,
-                filename,
-                n);
+        memcpy(name, filename, n);
 
         const char *e = dot + 1;
 
-        int m = (int)strlen(e);
+        int m = (int) strlen(e);
 
-        if (m > 3)
-        {
+        if (m > 3) {
             m = 3;
         }
 
-        memcpy(
-                ext,
-                e,
-                m);
-    }
-    else
-    {
-        int n = (int)strlen(filename);
+        memcpy(ext, e, m);
+    } else {
+        int n = (int) strlen(filename);
 
-        if (n > 8)
-        {
+        if (n > 8) {
             n = 8;
         }
 
-        memcpy(
-                name,
-                filename,
-                n);
+        memcpy(name, filename, n);
     }
 
     static uint16_t nextBlock = 4;
 
-    size_t fileOffset = 0;
+    int freeEntry = -1;
 
-    while (fileOffset < size)
-    {
-        int freeEntry = -1;
-
-        for (int i = 0; i < 64; i++)
-        {
-            if (directory[i * 32] == 0xE5)
-            {
-                freeEntry = i;
-                break;
-            }
+    for (int i = 0; i < 64; i++) {
+        if (directory[i * 32] == 0xE5) {
+            freeEntry = i;
+            break;
         }
+    }
 
-        if (freeEntry < 0)
-        {
+    if (freeEntry < 0) {
+        __android_log_print(
+                ANDROID_LOG_ERROR,
+                "CPM",
+                "DIRECTORY FULL");
+        return;
+    }
+
+    size_t fileOffset = 0;
+    int extentNo = 1;
+
+    bool multiExtent =
+            (size > 32768);
+
+    while (fileOffset < size) {
+        if (freeEntry >= 64) {
             __android_log_print(
                     ANDROID_LOG_ERROR,
                     "CPM",
-                    "DIRECTORY FULL");
-
+                    "DIRECTORY OVERFLOW");
             return;
         }
 
         uint8_t *dir =
                 &directory[freeEntry * 32];
 
-        memset(
-                dir,
-                0,
-                32);
+        memset(dir, 0, 32);
 
-        dir[0] = 0;
+        dir[0] = 0x00;
 
-        memcpy(
-                &dir[1],
-                name,
-                8);
-
-        memcpy(
-                &dir[9],
-                ext,
-                3);
+        memcpy(&dir[1], name, 8);
+        memcpy(&dir[9], ext, 3);
 
         size_t extentBytes =
                 size - fileOffset;
 
-        if (extentBytes > 32768)
-        {
+        if (extentBytes > 32768) {
             extentBytes = 32768;
         }
 
         int records =
-                (int)((extentBytes + 127) / 128);
+                (int) ((extentBytes + 127) / 128);
 
-        //
-        // EXM=1 仮説
-        //
-        int ex;
+        bool lastExtent =
+                (fileOffset + extentBytes >= size);
 
-        if (records >= 128)
-        {
-            ex = 1;
-
-            if (records > 128)
-            {
-                records -= 128;
-            }
-            else
-            {
-                records = 0x80;
-            }
+        if (!multiExtent) {
+            makeExtent1(
+                    dir,
+                    extentNo,
+                    records,
+                    lastExtent);
+        } else {
+            makeExtent2(
+                    dir,
+                    extentNo,
+                    records,
+                    lastExtent);
         }
-        else
-        {
-            ex = 0;
-        }
-
-        dir[12] = (uint8_t)ex;
-        dir[13] = 0;
-        dir[14] = 0;
-        dir[15] = (uint8_t)records;
 
         memset(
                 &dir[16],
@@ -456,26 +477,23 @@ void IO::injectComFile(
                 16);
 
         int blockCount =
-                (int)((extentBytes + 4095)
-                      / 4096);
+                (int) ((extentBytes + 4095) / 4096);
 
-        if (blockCount > 8)
-        {
+        if (blockCount > 8) {
             blockCount = 8;
         }
 
         for (int blockIndex = 0;
              blockIndex < blockCount;
-             blockIndex++)
-        {
+             blockIndex++) {
             uint16_t block =
                     nextBlock++;
 
             dir[16 + blockIndex * 2] =
-                    (uint8_t)(block & 0xFF);
+                    (uint8_t) (block & 0xFF);
 
             dir[17 + blockIndex * 2] =
-                    (uint8_t)(block >> 8);
+                    (uint8_t) (block >> 8);
 
             uint8_t buffer[4096];
 
@@ -486,17 +504,16 @@ void IO::injectComFile(
 
             size_t src =
                     fileOffset +
-                    (size_t)blockIndex * 4096;
+                    (size_t) blockIndex * 4096;
 
             size_t remain =
                     extentBytes -
-                    (size_t)blockIndex * 4096;
+                    (size_t) blockIndex * 4096;
 
             size_t copy =
                     remain;
 
-            if (copy > 4096)
-            {
+            if (copy > 4096) {
                 copy = 4096;
             }
 
@@ -518,6 +535,9 @@ void IO::injectComFile(
         }
 
         fileOffset += extentBytes;
+
+        extentNo++;
+        freeEntry++;
     }
 
     fseek(

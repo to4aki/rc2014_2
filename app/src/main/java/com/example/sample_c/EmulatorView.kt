@@ -102,6 +102,26 @@ class EmulatorView(
 
         when (keyCode)
         {
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                NativeBridge.keyPress(0x80)
+                return true
+            }
+
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                NativeBridge.keyPress(0x81)
+                return true
+            }
+
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                NativeBridge.keyPress(0x82)
+                return true
+            }
+
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                NativeBridge.keyPress(0x83)
+                return true
+            }
+
             KeyEvent.KEYCODE_ESCAPE ->
             {
                 NativeBridge.keyPress(0x1B)

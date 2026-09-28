@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdio.h>
 #include "VRAM.h"
 #include "Console.h"
 
@@ -35,20 +36,103 @@ void Console::putChar(uint8_t ch)
     {
         escMode = true;
         escPos = 0;
+        escBuf[0] = 0;
         return;
     }
+
     if(escMode)
     {
-        escBuf[escPos++] = ch;
-        escBuf[escPos] = 0;
+        if(escPos < (int)sizeof(escBuf) - 1)
+        {
+            escBuf[escPos++] = (char)ch;
+            escBuf[escPos] = 0;
+        }
+
+        if(ch == 'H')
+        {
+            if(strcmp(escBuf, "[H") == 0)
+            {
+                g_vram.cursorX = 0;
+                g_vram.cursorY = 0;
+            }
+            else
+            {
+                int row;
+                int col;
+
+                if(sscanf(
+                        escBuf,
+                        "[%d;%dH",
+                        &row,
+                        &col) == 2)
+                {
+                    if(row > 0)
+                    {
+                        row--;
+                    }
+
+                    if(col > 0)
+                    {
+                        col--;
+                    }
+
+                    if(row < 0)
+                    {
+                        row = 0;
+                    }
+
+                    if(col < 0)
+                    {
+                        col = 0;
+                    }
+
+                    if(row >= VRAM::TEXT_ROWS)
+                    {
+                        row = VRAM::TEXT_ROWS - 1;
+                    }
+
+                    if(col >= VRAM::COLS)
+                    {
+                        col = VRAM::COLS - 1;
+                    }
+
+                    g_vram.cursorY = row;
+                    g_vram.cursorX = col;
+                }
+            }
+
+            escMode = false;
+            return;
+        }
 
         if(ch == 'J')
         {
-            if(strcmp(escBuf, "[2J") == 0)
+            if(strcmp(escBuf, "[2J") == 0 ||
+               strcmp(escBuf, "[J")  == 0)
             {
                 clearScreen();
             }
 
+            escMode = false;
+            return;
+        }
+
+        if(ch == 'K')
+        {
+            for(int x = g_vram.cursorX;
+                x < VRAM::COLS;
+                x++)
+            {
+                g_vram.text[g_vram.cursorY][x] = ' ';
+                g_vram.colorTable[g_vram.cursorY][x] = 0x1F;
+            }
+
+            escMode = false;
+            return;
+        }
+
+        if(escPos >= 15)
+        {
             escMode = false;
         }
 

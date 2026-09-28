@@ -2,6 +2,7 @@
 // Created by toshiaki_matsuyama on 2026/09/16.
 //
 
+#include <android/log.h>
 #include "Keyboard.h"
 
 void Keyboard::reset()
@@ -17,6 +18,35 @@ bool Keyboard::empty() const
 
 bool Keyboard::push(uint8_t key)
 {
+    __android_log_print(
+            ANDROID_LOG_ERROR,
+            "KBD",
+            "PUSH %02X",
+            key);
+
+    {
+        if(key == 0x80)
+        {
+            push(0x05);
+            return true;
+        }
+        if(key == 0x81)
+        {
+            push(0x18);
+            return true;
+        }
+        if(key == 0x82)
+        {
+            push(0x04);
+            return true;
+        }
+        if(key == 0x83)
+        {
+            push(0x13);
+            return true;
+        }
+    }
+
     int next =
             (writePos + 1) % SIZE;
 
