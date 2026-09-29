@@ -9,6 +9,7 @@ extern VRAM g_vram;
 static void scrollScreen();
 
 void Console::clearScreen() {
+
     for (int y = 0;
          y < VRAM::TEXT_ROWS;
          y++) {
@@ -37,82 +38,73 @@ void Console::putChar(uint8_t ch) {
     }
 
     if (escMode) {
+
         if (escPos < (int) sizeof(escBuf) - 1) {
             escBuf[escPos++] = (char) ch;
             escBuf[escPos] = 0;
         }
 
-        if (escBuf[0] != '=' &&
-            escBuf[0] != 'T') {
-            __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    "TS803",
-                    "[%s]",
-                    escBuf);
-        }
-
         //
-// Televideo TS803
-// ESC = row col
-//
+        // Televideo TS803
+        // ESC = row col
+        //
         if (escPos == 3 &&
-            escBuf[0] == '=')
-        {
-            int row = ((uint8_t)escBuf[1]) - 32;
-            int col = ((uint8_t)escBuf[2]) - 32;
+            escBuf[0] == '=') {
+            int row = ((uint8_t) escBuf[1]) - 32;
+            int col = ((uint8_t) escBuf[2]) - 32;
 
-            if(row < 0)
-            {
+            if (row < 0) {
                 row = 0;
             }
 
-            if(col < 0)
-            {
+            if (col < 0) {
                 col = 0;
             }
 
-            if(row >= VRAM::TEXT_ROWS)
-            {
+            if (row >= VRAM::TEXT_ROWS) {
                 row = VRAM::TEXT_ROWS - 1;
             }
 
-            if(col >= VRAM::COLS)
-            {
+            if (col >= VRAM::COLS) {
                 col = VRAM::COLS - 1;
             }
 
             g_vram.cursorY = row;
             g_vram.cursorX = col;
 
+            if (row == 22 && col == 0) {
+                __android_log_print(
+                        ANDROID_LOG_ERROR,
+                        "TS803",
+                        "CURSOR 22,0");
+            }
+
             escMode = false;
             escPos = 0;
 
             return;
         }
 
-        if(strcmp(escBuf, "E") == 0)
-        {
+        if (strcmp(escBuf, "E") == 0) {
             clearScreen();
-
             escMode = false;
             escPos = 0;
 
             return;
         }
 
-        if(escBuf[0] == 'T')
-        {
+        if (strcmp(escBuf, "T") == 0) {
             escMode = false;
             escPos = 0;
             return;
         }
 
-        if(strcmp(escBuf, "K") == 0)
-        {
-            for(int x = g_vram.cursorX;
-                x < VRAM::COLS;
-                x++)
-            {
+        // 行消去(EL)
+        if (strcmp(escBuf, "K") == 0) {
+
+            for (int x = g_vram.cursorX;
+                 x < VRAM::COLS;
+                 x++) {
                 g_vram.text[g_vram.cursorY][x] = ' ';
                 g_vram.colorTable[g_vram.cursorY][x] = 0x1F;
             }
@@ -123,6 +115,7 @@ void Console::putChar(uint8_t ch) {
             return;
         }
 
+        // ホーム移動
         if (ch == 'H') {
             if (strcmp(escBuf, "[H") == 0) {
                 g_vram.cursorX = 0;
@@ -169,22 +162,12 @@ void Console::putChar(uint8_t ch) {
             return;
         }
 
+        // 画面消去(ED)
         if (ch == 'J') {
+
             if (strcmp(escBuf, "[2J") == 0 ||
                 strcmp(escBuf, "[J") == 0) {
                 clearScreen();
-            }
-
-            escMode = false;
-            return;
-        }
-
-        if (ch == 'K') {
-            for (int x = g_vram.cursorX;
-                 x < VRAM::COLS;
-                 x++) {
-                g_vram.text[g_vram.cursorY][x] = ' ';
-                g_vram.colorTable[g_vram.cursorY][x] = 0x1F;
             }
 
             escMode = false;
@@ -198,8 +181,7 @@ void Console::putChar(uint8_t ch) {
         return;
     }
 
-    if(ch == 0x0C)
-    {
+    if (ch == 0x0C) {
         clearScreen();
         return;
     }
@@ -212,18 +194,15 @@ void Console::putChar(uint8_t ch) {
         return;
     }
 
-    if (ch == '\r')
-    {
+    if (ch == '\r') {
         g_vram.cursorX = 0;
         return;
     }
 
-    if (ch == '\n')
-    {
+    if (ch == '\n') {
         g_vram.cursorY++;
 
-        if (g_vram.cursorY >= VRAM::TEXT_ROWS)
-        {
+        if (g_vram.cursorY >= VRAM::TEXT_ROWS) {
             scroll();
             g_vram.cursorY = VRAM::TEXT_ROWS - 1;
         }

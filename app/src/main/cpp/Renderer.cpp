@@ -329,9 +329,9 @@ void Renderer::render(
             uint8_t fg =
                     attr & 0x0F;
 
-            if (ch == ' ') {
-                continue;
-            }
+            //if (ch == ' ') {
+            //    continue;
+            //}
 
             for (int fy = 0; fy < 8; fy++) {
                 // フォントテスト
