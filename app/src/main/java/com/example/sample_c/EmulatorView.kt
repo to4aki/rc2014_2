@@ -92,21 +92,17 @@ class EmulatorView(
                 KeyEvent.KEYCODE_C ->
                 {
                     NativeBridge.keyPress(0x03)
-
-                    invalidate()
-
                     return true
                 }
+
                 KeyEvent.KEYCODE_Z ->
                 {
                     NativeBridge.keyPress(0x1A)
-
-                    invalidate()
-
                     return true
                 }
             }
         }
+
 
         when (keyCode)
         {
@@ -141,7 +137,22 @@ class EmulatorView(
 
             KeyEvent.KEYCODE_DEL ->
             {
+                //
+                // Backspace
+                //
                 NativeBridge.keyPress(0x08)
+
+                invalidate()
+
+                return true
+            }
+
+            KeyEvent.KEYCODE_FORWARD_DEL ->
+            {
+                //
+                // DEL
+                //
+                NativeBridge.keyPress(0x7F)
 
                 invalidate()
 

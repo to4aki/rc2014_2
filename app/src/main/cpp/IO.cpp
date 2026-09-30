@@ -40,7 +40,8 @@ uint8_t IO::in(uint8_t port) {
             return cfSector[cfPos++ & 511];
 
         case 0x17:
-            return 0x48;
+//            return 0x48;
+            return 0x58;
 
             //
             // SIO A DATA
@@ -59,19 +60,8 @@ uint8_t IO::in(uint8_t port) {
 
             return (uint8_t) last;
         }
-        /*
-        case 0x00:
-        {
-            int key = g_keyboardA.pop();
 
-            if (key < 0)
-            {
-                return 0;
-            }
 
-            return (uint8_t)key;
-        }
-        */
             //
             // SIO B DATA
             //
@@ -124,6 +114,9 @@ uint8_t IO::in(uint8_t port) {
 void IO::out(
         uint8_t port,
         uint8_t value) {
+
+    static uint8_t cfCount = 1;
+
     switch (port) {
         //
         // CF DATA
@@ -155,6 +148,10 @@ void IO::out(
 
             break;
         }
+
+        case 0x12:
+            cfCount = value;
+            break;
 
         case 0x13:
             cfLba0 = value;
@@ -221,10 +218,11 @@ void IO::out(
             // Console
             //
         case 0x00:
-        //case 0x01:
         case 0x81:
+        {
             g_console.putChar(value);
             break;
+        }
 
         default:
             break;
